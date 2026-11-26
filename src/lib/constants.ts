@@ -1,15 +1,18 @@
-export const OWNER_EMAILS = [
-  "lina.torres@gmail.com",
-  "alejandro.henao@gmail.com",
-  "cristian.camilo@gmail.com",
-  "amy.vargas@gmail.com",
-];
-
+// Owner invitations are now managed in the database (owner_invitations table).
+// In local/demo mode, the seed adds the internal owner emails.
 export function isOwnerEmail(email?: string | null): boolean {
   if (!email) return false;
-  return OWNER_EMAILS.includes(email.toLowerCase());
+  const db = typeof window !== "undefined" ? (window as any).__arriendaya_db : null;
+  // fallback: check localStorage cache
+  try {
+    const raw = localStorage.getItem("arriendaya_db");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return (parsed.owner_invitations || []).some((o: any) => o.email?.toLowerCase() === email.toLowerCase());
+    }
+  } catch {}
+  return false;
 }
-
 export const PROPERTY_TYPES = [
   "Apartamento",
   "Casa",

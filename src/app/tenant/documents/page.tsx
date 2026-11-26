@@ -18,6 +18,9 @@ export default function TenantDocumentsPage() {
 
   const uploadPersonal = async () => {
     if (!file) return;
+    const { validateFile } = await import("@/lib/utils");
+    const v = validateFile(file, 10, ["application/pdf", "image/jpeg", "image/png"]);
+    if (!v.valid) { alert(v.error); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const arr = JSON.parse(localStorage.getItem("arriendaya_personal_docs") || "[]");

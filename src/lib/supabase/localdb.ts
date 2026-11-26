@@ -54,7 +54,7 @@ function saveDb(db: any) {
 }
 
 function emptyDb() {
-  return { users: [], profiles: [], properties: [], property_images: [], rental_requests: [], request_documents: [], contracts: [], notifications: [], saved_properties: [], saved_lists: [], payments: [], visits: [], reservations: [], calendar_events: [], conversations: [], messages: [], quick_replies: [], activity_log: [], reports: [], reviews: [], request_notes: [] };
+  return { users: [], profiles: [], properties: [], property_images: [], rental_requests: [], request_documents: [], contracts: [], notifications: [], saved_properties: [], saved_lists: [], payments: [], visits: [], reservations: [], calendar_events: [], conversations: [], messages: [], quick_replies: [], activity_log: [], reports: [], reviews: [], request_notes: [], owner_invitations: [] };
 }
 
 let _storageCache: any = null;
@@ -85,8 +85,9 @@ function uid() {
 }
 
 function seedDb(db) {
-  for (const email of OWNER_EMAILS) {
+  for (const email of ["lina.torres@gmail.com", "alejandro.henao@gmail.com", "cristian.camilo@gmail.com", "amy.vargas@gmail.com"]) {
     const id = "owner-" + email.split("@")[0].replace(/\./g, "-");
+    db.owner_invitations.push({ email, invited_by: null, created_at: new Date().toISOString() });
     db.users.push({ id, email, password: "Propietario1234", user_metadata: { full_name: "Propietario", phone: "3000000000", accepted_terms: true } });
     db.profiles.push({ id, email, full_name: "Propietario", phone: "3000000000", role: "owner", avatar_url: null, accepted_terms: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
   }
@@ -267,7 +268,8 @@ const auth = {
     const id = uid();
     const meta = options?.data || {};
     db.users.push({ id, email, password, user_metadata: meta });
-    const role = isOwnerEmail(email) ? "owner" : "tenant";
+    const db2 = loadDb();
+    const role = (db2.owner_invitations || []).some((o: any) => o.email?.toLowerCase() === email.toLowerCase()) ? "owner" : "tenant";
     db.profiles.push({ id, email, full_name: meta.full_name || "", phone: meta.phone || null, role, avatar_url: null, accepted_terms: meta.accepted_terms || false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
     saveDb(db);
     localStorage.setItem(SESSION_KEY, id);

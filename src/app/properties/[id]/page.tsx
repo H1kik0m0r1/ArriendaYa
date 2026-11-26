@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Property } from "@/lib/types";
 import dynamic from "next/dynamic";
 import RequestButton from "@/components/property/RequestButton";
+import { isValidVideoUrl } from "@/lib/utils";
 const MapView = dynamic(() => import("@/components/property/MapView"), { ssr: false });
 
 export default function PropertyDetailPage() {
@@ -128,7 +129,7 @@ export default function PropertyDetailPage() {
       )}
 
       {/* Video */}
-      {property.video_url && (
+      {property.video_url && isValidVideoUrl(property.video_url) && (
         <div className="mt-4 rounded-xl border border-border bg-card p-4">
           <h2 className="text-lg font-semibold">Video / Recorrido</h2>
           <div className="mt-2 aspect-video">

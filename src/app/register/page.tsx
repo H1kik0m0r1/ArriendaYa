@@ -3,10 +3,11 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { isOwnerEmail } from "@/lib/constants";
+
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import Input from "@/components/ui/Input";
+import { registerSchema } from "@/lib/validators/schemas";
 
 const OWNER_PASSWORD = "Propietario1234";
 
@@ -30,8 +31,6 @@ export default function RegisterPage() {
   const supabase = createClient();
   const toast = useToast();
 
-  const owner = isOwnerEmail(email);
-
   const nameError = useMemo(() => {
     if (!fullName) return "Requerido";
     if (!onlyLetters(fullName)) return "Solo letras";
@@ -51,10 +50,9 @@ export default function RegisterPage() {
   }, [email]);
   const passwordError = useMemo(() => {
     if (!password) return "Requerido";
-    if (owner && password !== OWNER_PASSWORD) return "Contraseña incorrecta";
-    if (!owner && password.length < 6) return "Mínimo 6 caracteres";
+    if (password.length < 6) return "Mínimo 6 caracteres";
     return "";
-  }, [password, owner]);
+  }, [password]);
 
   const strength = useMemo(() => {
     if (!password) return { level: 0, label: "", color: "" };
@@ -74,6 +72,12 @@ export default function RegisterPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched({ fullName: true, phone: true, email: true, password: true, terms: true });
+    // Zod validation (server-side ready)
+    const parsed = registerSchema.safeParse({ fullName, phone, email, password, terms });
+    if (!parsed.success) {
+      setError("Corrige los errores antes de continuar.");
+      return;
+    }
     if (nameError || phoneError || emailError || passwordError || termsError) {
       setError("Corrige los errores antes de continuar.");
       return;
@@ -144,7 +148,7 @@ export default function RegisterPage() {
           placeholder="Mínimo 6 caracteres"
           required
         />
-        {!owner && password && (
+        {password && (
           <p className={`text-xs font-medium ${strength.color}`}>
             Nivel de seguridad: {strength.label}
           </p>
