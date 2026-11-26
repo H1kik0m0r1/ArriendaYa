@@ -8,7 +8,7 @@ export default function Wizard({ steps, onFinish }: { steps: { title: string; co
     <div>
       <div className="mb-4 flex items-center gap-2">
         {steps.map((s, i) => (
-          <div key={i} className={`flex-1 rounded-full h-2 ${i <= current ? "bg-primary" : "bg-gray-200"}`} />
+          <div key={i} className={`flex-1 rounded-full h-2 ${i <= current ? "bg-primary-btn" : "bg-surface-secondary"}`} />
         ))}
       </div>
       <p className="mb-2 text-sm text-muted">Paso {current + 1} de {steps.length}: {steps[current].title}</p>

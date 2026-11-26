@@ -1,82 +1,136 @@
 "use client";
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { getDataSourceMode } from "@/lib/config/env";
+import { loginSchema, safeRedirectPath, type LoginFormValues } from "@/modules/auth/schemas";
+import { loginWithPassword } from "@/modules/auth/service";
+import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
+function LoginForm() {
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
+  const searchParams = useSearchParams();
+  const mode = getDataSourceMode();
 
-  const mark = (f: string) => setTouched((t) => ({ ...t, [f]: true }));
+  const nextParam = safeRedirectPath(searchParams.get("next"), "");
+  const queryError = searchParams.get("error");
 
-  const emailError = useMemo(() => {
-    if (!email) return "Requerido";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Formato inválido (ej: example@gmail.com)";
-    return "";
-  }, [email]);
-  const passwordError = useMemo(() => {
-    if (!password) return "Requerido";
-    return "";
-  }, [password]);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, touchedFields, isSubmitting },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    mode: "onTouched",
+    defaultValues: { email: "", password: "" },
+  });
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched({ email: true, password: true });
-    if (emailError || passwordError) { setError("Corrige los errores."); return; }
-    setLoading(true);
+  const onSubmit = async (values: LoginFormValues) => {
     setError("");
-    let { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) { setError("Contraseña incorrecta o acceso fallido"); setLoading(false); return; }
-    router.push("/");
+    const res = await loginWithPassword(values, nextParam);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.push(res.data.redirectTo);
     router.refresh();
   };
 
-
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="mb-6 text-2xl font-bold text-primary">Iniciar sesión</h1>
-      <form onSubmit={handleLogin} className="flex flex-col gap-4">
-        <Input
-          label="Correo electrónico"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => mark("email")}
-          error={touched.email ? emailError : ""}
-          success={touched.email && !emailError}
-          placeholder="example@gmail.com"
-          pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
-          required
-        />
-        <Input
-          label="Contraseña"
-          type="password"
-          showPasswordToggle
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onBlur={() => mark("password")}
-          error={touched.password ? passwordError : ""}
-          success={touched.password && !passwordError}
-          required
-        />
+    <div className="mx-auto max-w-md py-2 sm:py-6">
+      <Card>
+        <CardHeader>
+          <h1 className="text-2xl font-bold text-primary-dark">Iniciar sesión</h1>
+          <p className="mt-1 text-sm text-muted">Ingresa a tu cuenta de ArriendaYa</p>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          {mode === "demo" && (
+            <Alert variant="info">
+              <span>
+                Entorno de demostración activo (<code className="break-all">NEXT_PUBLIC_DEMO_MODE=true</code>). Los datos se almacenan localmente en este navegador.
+              </span>
+            </Alert>
+          )}
+          {(mode === "unconfigured" || queryError === "config") && (
+            <Alert variant="error">
+              Supabase no está configurado. Define las variables de entorno en `.env.local` para iniciar sesión.
+            </Alert>
+          )}
+          {queryError === "auth_callback" && (
+            <Alert variant="error">
+              El enlace de verificación o recuperación es inválido o expiró.
+            </Alert>
+          )}
+          {queryError === "profile" && (
+            <Alert variant="error">
+              No se pudo verificar el perfil de tu cuenta. Inicia sesión nuevamente o contacta al administrador.
+            </Alert>
+          )}
+          {queryError === "suspended" && (
+            <Alert variant="error">
+              Tu cuenta se encuentra suspendida. Contacta al administrador si necesitas más información.
+            </Alert>
+          )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <Button type="submit" loading={loading}>Entrar</Button>
-      </form>
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+            <Input
+              label="Correo electrónico"
+              type="email"
+              placeholder="usuario@correo.com"
+              error={errors.email?.message}
+              success={Boolean(touchedFields.email && !errors.email)}
+              required
+              {...register("email")}
+            />
+            <Input
+              label="Contraseña"
+              type="password"
+              showPasswordToggle
+              error={errors.password?.message}
+              success={Boolean(touchedFields.password && !errors.password)}
+              required
+              {...register("password")}
+            />
 
-      <p className="mt-4 text-center text-sm">
-        ¿No tienes cuenta? <Link href="/register" className="text-primary hover:underline">Regístrate</Link>
-      </p>
+            {error && <Alert variant="error">{error}</Alert>}
+            <Button type="submit" loading={isSubmitting} className="w-full">
+              Entrar
+            </Button>
+          </form>
+
+          <div className="flex flex-col gap-2 border-t border-border pt-4 text-center text-sm">
+            <Link href="/forgot-password" className="text-primary hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
+            <p className="text-muted">
+              ¿No tienes cuenta?{" "}
+              <Link href="/register" className="font-medium text-primary hover:underline">
+                Regístrate
+              </Link>
+            </p>
+          </div>
+        </CardBody>
+      </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto max-w-md py-6">
+          <div className="h-80 animate-pulse rounded-xl border border-border bg-surface-secondary" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

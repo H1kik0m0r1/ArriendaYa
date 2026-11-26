@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" fill="none">
+  <rect width="800" height="600" fill="#DDEADF" />
+  <rect x="250" y="185" width="300" height="210" rx="16" fill="#FFFFFF" stroke="#367C59" stroke-width="6" />
+  <path d="M235 280L400 155L565 280" stroke="#293B32" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="365" y="300" width="70" height="95" rx="6" fill="#367C59" />
+  <circle cx="315" cy="260" r="18" fill="#DDEADF" stroke="#367C59" stroke-width="4" />
+  <circle cx="485" cy="260" r="18" fill="#DDEADF" stroke="#367C59" stroke-width="4" />
+  <text x="400" y="455" text-anchor="middle" fill="#293B32" font-family="system-ui, sans-serif" font-size="24" font-weight="600">
+    ArriendaYa
+  </text>
+</svg>

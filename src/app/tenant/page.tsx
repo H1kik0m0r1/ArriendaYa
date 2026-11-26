@@ -1,91 +1,149 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
-import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Clock,
+  FileCheck2,
+  FileSearch,
+  FileText,
+  FileWarning,
+  Heart,
+  Home,
+  Inbox,
+  MessageSquare,
+} from "lucide-react";
+import { fetchTenantDashboardData } from "@/modules/analytics/service";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import PageHeader from "@/components/ui/PageHeader";
 
 export default function TenantDashboardPage() {
-  const supabase = createClient();
   const { data, isLoading } = useQuery({
     queryKey: ["tenantDashboard"],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data: reqs } = await supabase.from("rental_requests").select("*").eq("tenant_id", user.id);
-      const r = reqs || [];
-      const pending = r.filter((x: any) => x.status === "pending").length;
-      const inReview = r.filter((x: any) => x.status === "docs_submitted" || x.status === "returned").length;
-      const { data: cons } = await supabase.from("contracts").select("*").eq("tenant_id", user.id);
-      const c = cons || [];
-      const active = c.filter((x: any) => x.status === "active").length;
-      const now = new Date();
-      const soon = c.filter((x: any) => x.status === "active" && x.end_date && (new Date(x.end_date).getTime() - now.getTime()) / 86400000 <= 30).length;
-      const docsPending = r.filter((x: any) => x.status === "first_accepted" || x.status === "returned").length;
-      const { data: notifs } = await supabase.from("notifications").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
-      return { stats: { total: r.length, pending, inReview, active, soon, docsPending }, activity: (notifs || []).slice(0, 10) };
-    },
+    queryFn: fetchTenantDashboardData,
   });
 
-  const stats: any = data?.stats || {};
-  const activity: any[] = data?.activity || [];
+  const stats = data?.stats ?? {
+    total: 0,
+    pending: 0,
+    inReview: 0,
+    active: 0,
+    soon: 0,
+    docsPending: 0,
+  };
+  const activity = data?.activity ?? [];
 
   const cards = [
-    { label: "Solicitudes realizadas", value: stats.total ?? 0, icon: "📋" },
-    { label: "Pendientes de respuesta", value: stats.pending ?? 0, icon: "⏳" },
-    { label: "En verificación documental", value: stats.inReview ?? 0, icon: "🔍" },
-    { label: "Contratos activos", value: stats.active ?? 0, icon: "📝" },
-    { label: "Contratos por vencer", value: stats.soon ?? 0, icon: "⏰" },
-    { label: "Documentos pendientes", value: stats.docsPending ?? 0, icon: "📄" },
+    { label: "Solicitudes realizadas", value: stats.total, icon: FileText, tone: "text-primary bg-primary/10" },
+    { label: "Pendientes de respuesta", value: stats.pending, icon: Clock, tone: "text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/60" },
+    { label: "En verificación documental", value: stats.inReview, icon: FileSearch, tone: "text-sky-700 bg-sky-50 dark:text-sky-300 dark:bg-sky-950/60" },
+    { label: "Contratos activos", value: stats.active, icon: FileCheck2, tone: "text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/60" },
+    { label: "Contratos por vencer", value: stats.soon, icon: FileWarning, tone: "text-orange-700 bg-orange-50 dark:text-orange-300 dark:bg-orange-950/60" },
+    { label: "Documentos pendientes", value: stats.docsPending, icon: Inbox, tone: "text-foreground bg-surface-secondary" },
+  ];
+
+  const quickLinks = [
+    { href: "/", label: "Buscar inmuebles", icon: Home, primary: true },
+    { href: "/tenant/requests", label: "Mis solicitudes", icon: FileText },
+    { href: "/tenant/documents", label: "Mis documentos", icon: FileSearch },
+    { href: "/tenant/contracts", label: "Mis contratos", icon: FileCheck2 },
+    { href: "/tenant/saved", label: "Favoritos", icon: Heart },
+    { href: "/tenant/messages", label: "Mensajes", icon: MessageSquare },
   ];
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-bold text-primary">Panel principal</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Panel principal"
+        subtitle="Resumen de tus solicitudes, contratos activos y actividad reciente."
+        actions={
+          <Link
+            href="/"
+            className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-primary-btn px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-btn-hover"
+          >
+            Explorar propiedades
+          </Link>
+        }
+      />
+
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-200" />
+            <div key={i} className="h-24 animate-pulse rounded-xl border border-border bg-surface-secondary" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {cards.map((c) => (
-            <div key={c.label} className="relative rounded-xl border border-border bg-white p-4 shadow-sm">
-              <span className="absolute right-3 top-3 text-xl">{c.icon}</span>
-              <p className="text-xs text-muted">{c.label}</p>
-              <p className="text-3xl font-bold text-green-700">{c.value}</p>
-            </div>
-          ))}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((c) => {
+            const Icon = c.icon;
+            return (
+              <Card key={c.label}>
+                <CardBody className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-muted">{c.label}</p>
+                    <p className="mt-1 text-3xl font-bold text-primary-dark">{c.value}</p>
+                  </div>
+                  <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${c.tone}`}>
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                </CardBody>
+              </Card>
+            );
+          })}
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-2 font-semibold">Actividad reciente</h2>
-          {activity.length === 0 ? (
-            <p className="text-muted text-sm">Sin actividad.</p>
-          ) : (
-            <ol className="relative border-l border-border pl-4">
-              {activity.map((a) => (
-                <li key={a.id} className="mb-4 ml-2">
-                  <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full bg-primary" />
-                  <p className="font-medium">{a.title}</p>
-                  <p className="text-xs text-muted">{a.message}</p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="mb-2 font-semibold">Accesos rápidos</h2>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/" className="rounded-lg bg-primary px-3 py-1 text-sm text-white">Buscar inmuebles</Link>
-            <Link href="/tenant/requests" className="rounded-lg border border-border px-3 py-1 text-sm">Mis solicitudes</Link>
-            <Link href="/tenant/requests" className="rounded-lg border border-border px-3 py-1 text-sm">Entregar docs</Link>
-            <Link href="/tenant/contracts" className="rounded-lg border border-border px-3 py-1 text-sm">Mis contratos</Link>
-            <Link href="/tenant/saved" className="rounded-lg border border-border px-3 py-1 text-sm">Favoritos</Link>
-            <Link href="/owner/messages" className="rounded-lg border border-border px-3 py-1 text-sm">Mensajes</Link>
-          </div>
-        </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <h2 className="font-semibold text-primary-dark">Actividad reciente</h2>
+          </CardHeader>
+          <CardBody>
+            {activity.length === 0 ? (
+              <EmptyState
+                title="Sin actividad reciente"
+                message="Cuando envíes solicitudes o recibas novedades aparecerán aquí."
+              />
+            ) : (
+              <ol className="relative space-y-4 border-l border-border pl-4">
+                {activity.map((a) => (
+                  <li key={a.id} className="ml-2">
+                    <span className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full bg-primary" />
+                    <p className="text-sm font-medium text-foreground">{a.title}</p>
+                    <p className="text-xs text-muted">{a.message}</p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <h2 className="font-semibold text-primary-dark">Accesos rápidos</h2>
+          </CardHeader>
+          <CardBody>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {quickLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href + item.label}
+                    href={item.href}
+                    className={`flex min-h-[42px] items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      item.primary
+                        ? "bg-primary-btn text-white hover:bg-primary-btn-hover"
+                        : "border border-border bg-card text-foreground hover:bg-primary-light/60"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </CardBody>
+        </Card>
       </div>
     </div>
   );

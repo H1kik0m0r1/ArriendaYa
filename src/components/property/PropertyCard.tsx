@@ -1,15 +1,24 @@
 "use client";
-import { useState, useRef, memo } from "react";
+import { memo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useToast } from "@/components/ui/Toast";
-import { createClient } from "@/lib/supabase/client";
-import { Property } from "@/lib/types";
 import { Star } from "lucide-react";
+import { getCurrentAuthUser } from "@/modules/auth/repository";
+import { toggleSavedPropertyRecord } from "@/modules/properties/repository";
+import type { Property } from "@/modules/properties/types";
+import { useToast } from "@/components/ui/Toast";
 
-const PropertyCard = memo(function PropertyCard({ property, saved = false, priority = false }: { property: Property; saved?: boolean; priority?: boolean }) {
+const PropertyCard = memo(function PropertyCard({
+  property,
+  saved = false,
+  priority = false,
+}: {
+  property: Property;
+  saved?: boolean;
+  priority?: boolean;
+}) {
   const images = property.property_images?.length
     ? property.property_images.map((i) => i.url)
     : ["/placeholder.svg"];
@@ -18,7 +27,6 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
   const [isSaved, setIsSaved] = useState(saved);
   const timer = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
-  const supabase = createClient();
   const qc = useQueryClient();
   const toast = useToast();
 
@@ -29,6 +37,7 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
       setIdx((i) => (i + 1) % images.length);
     }, 900);
   };
+
   const stopCarousel = () => {
     setHover(false);
     if (timer.current) clearInterval(timer.current);
@@ -36,37 +45,29 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
   };
 
   const mutation = useMutation({
-    mutationFn: async (next: boolean) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("no-auth");
-      if (next) {
-        await supabase.from("saved_properties").insert({ user_id: user.id, property_id: property.id });
-      } else {
-        await supabase.from("saved_properties").delete().eq("user_id", user.id).eq("property_id", property.id);
-      }
-      return next;
-    },
+    mutationFn: (next: boolean) => toggleSavedPropertyRecord(property.id, next),
     onMutate: async (next) => {
       setIsSaved(next);
     },
-    onError: (_err, _next, ctx) => {
+    onError: () => {
       setIsSaved(saved);
     },
     onSuccess: (next) => {
       toast.show(next ? "Guardado en favoritos" : "Eliminado de favoritos", "success");
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["savedIds"] });
+      void qc.invalidateQueries({ queryKey: ["savedIds"] });
     },
   });
 
   const toggleSave = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const { data: { user } } = { data: { user: null } } as any;
-    // check auth async
-    supabase.auth.getUser().then(({ data }: { data: any }) => {
-      if (!data.user) { router.push("/login"); return; }
+    void getCurrentAuthUser().then((user) => {
+      if (!user) {
+        router.push("/login");
+        return;
+      }
       mutation.mutate(!isSaved);
     });
   };
@@ -77,12 +78,19 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
 
   return (
     <div
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition-shadow hover:shadow-md"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
       onMouseEnter={startCarousel}
       onMouseLeave={stopCarousel}
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
-        <Image src={images[idx]} alt={property.name} fill sizes="(max-width: 768px) 100vw, 33vw" priority={priority} className="object-cover transition" />
+      <div className="relative aspect-[4/3] overflow-hidden bg-surface-secondary">
+        <Image
+          src={images[idx]}
+          alt={property.name}
+          fill
+          sizes="(max-width: 768px) 100vw, 33vw"
+          priority={priority}
+          className="object-cover transition"
+        />
         {property.discount_percent > 0 && (
           <span className="absolute left-2 top-2 rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">
             -{property.discount_percent}%
@@ -90,10 +98,10 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
         )}
         <button
           onClick={toggleSave}
-          className="absolute right-2 top-2 rounded-full bg-white/80 p-1.5 shadow hover:bg-white"
+          className="absolute right-2 top-2 rounded-full bg-card/90 p-1.5 shadow hover:bg-card"
           aria-label="Guardar"
         >
-          <Star className={`h-4 w-4 ${isSaved ? "fill-yellow-400 text-yellow-400" : "text-gray-600"}`} />
+          <Star className={`h-4 w-4 ${isSaved ? "fill-yellow-400 text-yellow-400" : "text-muted"}`} />
         </button>
         {images.length > 1 && hover && (
           <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
@@ -108,7 +116,9 @@ const PropertyCard = memo(function PropertyCard({ property, saved = false, prior
           <h3 className="text-lg font-semibold text-foreground">{property.name}</h3>
           <span className="whitespace-nowrap text-sm font-bold text-primary">
             {property.discount_percent > 0 && (
-              <span className="mr-1 text-xs text-muted line-through">{new Intl.NumberFormat("es-CO").format(Math.round(property.price / (1 - property.discount_percent / 100)))}</span>
+              <span className="mr-1 text-xs text-muted line-through">
+                {new Intl.NumberFormat("es-CO").format(Math.round(property.price / (1 - property.discount_percent / 100)))}
+              </span>
             )}
             {priceLabel}
           </span>

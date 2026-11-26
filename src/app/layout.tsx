@@ -8,6 +8,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import BottomNav from "@/components/layout/BottomNav";
 import NearbyChecker from "@/components/layout/NearbyChecker";
 import QueryProvider from "@/components/providers/QueryProvider";
+import ThemeSync from "@/components/providers/ThemeSync";
 import { ToastProvider } from "@/components/ui/Toast";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -17,14 +18,20 @@ export const metadata: Metadata = {
   description: "Plataforma de arriendo de inmuebles",
 };
 
+const THEME_INIT_SCRIPT = `(function(){try{var r=document.documentElement;var l=localStorage.getItem('arriendaya_large_text')==='1';r.style.fontSize=l?'18px':'16px';var raw=localStorage.getItem('arriendaya_theme');var p=(raw==='light'||raw==='dark'||raw==='system')?raw:'system';var d=p==='dark'||(p==='system'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);var t=d?'dark':'light';r.setAttribute('data-theme',t);r.setAttribute('data-theme-preference',p);r.style.colorScheme=t;var c=localStorage.getItem('arriendaya_contrast')==='high'?'high':'normal';r.setAttribute('data-contrast',c);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" className={inter.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
+        <ThemeSync />
         <Header />
         <QueryProvider>
           <ToastProvider>

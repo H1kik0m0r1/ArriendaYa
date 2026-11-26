@@ -52,7 +52,7 @@ export default function ContractsPage() {
       <aside className="hidden w-56 shrink-0 md:block">
         <nav className="sticky top-20 flex flex-col gap-1">
           {menu.map((m) => (
-            <Link key={m.href} href={m.href} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${pathname === m.href ? "bg-green-50 text-green-800" : "hover:bg-primary/10"}`}>
+            <Link key={m.href} href={m.href} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${pathname === m.href ? "bg-primary-light font-semibold text-primary-dark" : "text-foreground hover:bg-primary/10"}`}>
               <span>{m.icon}</span>
               {m.label}
             </Link>

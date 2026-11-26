@@ -1,63 +1,156 @@
 "use client";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { Notification } from "@/lib/types";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import { ArrowRight, Bell, Check, CheckCheck } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  listUserNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+} from "@/modules/notifications/repository";
+import type { Notification } from "@/modules/notifications/types";
+import { Badge } from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
+import { Card, CardBody } from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import PageHeader from "@/components/ui/PageHeader";
 
 export default function NotificationsPage() {
+  const [userId, setUserId] = useState<string | null>(null);
   const [items, setItems] = useState<Notification[]>([]);
-  const supabase = createClient();
+  const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [loading, setLoading] = useState(true);
+  const [markingAll, setMarkingAll] = useState(false);
 
   useEffect(() => {
+    const supabase = createClient();
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      setItems((data as Notification[]) || []);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) return;
+        setUserId(user.id);
+        setItems(await listUserNotifications(user.id));
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [supabase]);
+  }, []);
 
   const markRead = async (id: string) => {
-    await supabase.from("notifications").update({ read: true }).eq("id", id);
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    const { error } = await markNotificationAsRead(id);
+    if (!error) {
+      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    }
   };
 
+  const markAllRead = async () => {
+    if (!userId) return;
+    setMarkingAll(true);
+    const { error } = await markAllNotificationsAsRead(userId);
+    setMarkingAll(false);
+    if (!error) {
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
+  };
+
+  const unreadCount = items.filter((n) => !n.read).length;
+  const visibleItems = filter === "unread" ? items.filter((n) => !n.read) : items;
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-6 text-2xl font-bold text-primary">Notificaciones</h1>
-      {items.length === 0 && <p className="text-muted">No tienes notificaciones.</p>}
-      <ul className="flex flex-col gap-2">
-        {items.map((n) => (
-          <li
-            key={n.id}
-            className={`rounded-lg border border-border bg-card p-4 ${n.read ? "opacity-60" : ""}`}
+    <div className="mx-auto max-w-2xl space-y-6">
+      <PageHeader
+        title="Notificaciones"
+        subtitle="Mantente al día con tus solicitudes, contratos y alertas del sistema."
+        actions={
+          unreadCount > 0 ? (
+            <Button type="button" size="sm" variant="secondary" loading={markingAll} onClick={() => void markAllRead()}>
+              <CheckCheck className="h-4 w-4" aria-hidden="true" />
+              <span>Marcar todas como leídas ({unreadCount})</span>
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {!loading && items.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={filter === "all" ? "primary" : "secondary"}
+            onClick={() => setFilter("all")}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="font-medium">{n.title}</p>
-                <p className="text-sm text-muted">{n.message}</p>
-                <p className="text-xs text-muted">
-                  {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: es })}
-                </p>
-                {n.link && (
-                  <Link href={n.link} className="text-xs text-primary hover:underline">Ir →</Link>
-                )}
-              </div>
-              {!n.read && (
-                <button onClick={() => markRead(n.id)} className="text-xs text-primary hover:underline">
-                  Marcar leída
-                </button>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
+            Todas ({items.length})
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={filter === "unread" ? "primary" : "secondary"}
+            onClick={() => setFilter("unread")}
+          >
+            No leídas ({unreadCount})
+          </Button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-2.5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-xl border border-border bg-card/70" />
+          ))}
+        </div>
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          title={filter === "unread" ? "No tienes notificaciones sin leer" : "Sin notificaciones"}
+          message={filter === "unread" ? "Estás al día con todos tus avisos." : "No tienes avisos pendientes por revisar."}
+          icon={<Bell className="h-6 w-6 text-primary" aria-hidden="true" />}
+        />
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {visibleItems.map((n) => (
+            <li key={n.id}>
+              <Card className={n.read ? "opacity-75" : "border-primary/40"}>
+                <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-primary-dark">{n.title}</p>
+                      {!n.read && <Badge color="green">Nueva</Badge>}
+                    </div>
+                    <p className="text-sm text-foreground">{n.message}</p>
+                    <p className="text-xs text-muted">
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: es })}
+                    </p>
+                    {n.link && (
+                      <Link
+                        href={n.link}
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                      >
+                        <span>Ver detalle</span>
+                        <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                      </Link>
+                    )}
+                  </div>
+                  {!n.read && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void markRead(n.id)}
+                      className="shrink-0 self-start"
+                    >
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Marcar leída</span>
+                    </Button>
+                  )}
+                </CardBody>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

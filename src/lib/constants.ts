@@ -1,18 +1,4 @@
-// Owner invitations are now managed in the database (owner_invitations table).
-// In local/demo mode, the seed adds the internal owner emails.
-export function isOwnerEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const db = typeof window !== "undefined" ? (window as any).__arriendaya_db : null;
-  // fallback: check localStorage cache
-  try {
-    const raw = localStorage.getItem("arriendaya_db");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return (parsed.owner_invitations || []).some((o: any) => o.email?.toLowerCase() === email.toLowerCase());
-    }
-  } catch {}
-  return false;
-}
+// Las invitaciones de propietarios se gestionan exclusivamente en el servidor (tabla owner_invitations).
 export const PROPERTY_TYPES = [
   "Apartamento",
   "Casa",

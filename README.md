@@ -10,8 +10,8 @@ Plataforma web de arriendo de inmuebles (propietarios e inquilinos).
 
 ## Setup
 
-### Modo local (sin servidor externo)
-Por defecto, la app funciona con una base de datos local en el navegador (localStorage). No requiere configuración.
+### Modo demo local (sin servidor externo)
+Para probar sin Supabase en entorno local, define explícitamente `NEXT_PUBLIC_DEMO_MODE=true` en `.env.local`. No se activa automáticamente en producción.
 
 ### 1. Instalar dependencias
 
@@ -27,20 +27,23 @@ npm run dev
 
 Abre http://localhost:3000
 
-La base de datos es local (localStorage del navegador). No se requiere Supabase ni conexión a internet.
+En modo demo (`NEXT_PUBLIC_DEMO_MODE=true`), los datos se guardan localmente en el navegador (localStorage).
 
 ### Modo Supabase (backend real)
-Para usar Supabase, configura `.env.local`:
+Para usar Supabase, configura `.env.local` tomando `.env.example` como plantilla:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_DEMO_MODE=false
 ```
-Ejecuta `supabase/migrations/0001_init.sql` en el SQL Editor. La app detectará las variables y usará Supabase automáticamente (reportes, pagos y mensajes se sincronizan en la nube).
-Los propietarios internos se crean automáticamente al iniciar sesión con su correo y la contraseña `Propietario1234`:
-- lina.torres@gmail.com
-- alejandro.henao@gmail.com
-- cristian.camilo@gmail.com
-- amy.vargas@gmail.com
+Ejecuta las migraciones SQL en orden en el SQL Editor de Supabase:
+1. `supabase/migrations/0001_init.sql`
+2. `supabase/migrations/0002_security.sql`
+3. `supabase/migrations/0003_rls_complete.sql`
+4. `supabase/migrations/0004_security_hardening.sql`
+
+Las cuentas de propietario se habilitan invitando su correo en la tabla `owner_invitations` (solo administradores) y los roles privilegiados (`admin`) se asignan únicamente desde SQL/servidor.
 
 ### 3. Notas
 

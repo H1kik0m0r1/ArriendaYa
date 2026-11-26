@@ -1,18 +1,21 @@
-import { createBrowserClient } from "@supabase/ssr";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const useSupabase = !!(SUPABASE_URL && SUPABASE_KEY && SUPABASE_URL.startsWith("http"));
-
+import { createBrowserClient as createSSRBrowserClient } from "@supabase/ssr";
+import { isDemoMode, isSupabaseConfigured } from "@/lib/config/env";
 import * as localdb from "./localdb";
+import { createUnconfiguredClient } from "./unconfigured";
 
-export function createClient(): any {
-  if (useSupabase) {
-    return createBrowserClient(SUPABASE_URL!, SUPABASE_KEY!);
+export type AppSupabaseClient = ReturnType<typeof createSSRBrowserClient>;
+
+export function createClient(): AppSupabaseClient {
+  if (isSupabaseConfigured()) {
+    return createSSRBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
   }
-  return localdb.createClient();
+  if (isDemoMode()) {
+    return localdb.createClient() as unknown as AppSupabaseClient;
+  }
+  return createUnconfiguredClient() as unknown as AppSupabaseClient;
 }
 
 export { createClient as createBrowserClient };
-
-export const createServerClient = () => createClient();

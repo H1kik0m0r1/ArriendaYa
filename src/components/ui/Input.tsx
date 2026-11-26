@@ -32,7 +32,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             id={inputId}
             type={actualType}
             className={cn(
-              "w-full rounded-lg border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+              "w-full rounded-lg border border-border bg-input-bg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
               error && "border-red-500",
               !error && success && "border-green-500",
               (showPasswordToggle || clearable) && "pr-10",
@@ -41,17 +41,27 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {showPasswordToggle && isPassword && (
-            <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted">
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:text-foreground"
+            >
+              {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
             </button>
           )}
           {clearable && props.value && !showPasswordToggle && (
-            <button type="button" onClick={() => (props as any).onChange?.({ target: { value: "" } })} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted">
-              <X className="h-4 w-4" />
+            <button
+              type="button"
+              onClick={() => props.onChange?.({ target: { value: "" } } as React.ChangeEvent<HTMLInputElement>)}
+              aria-label="Limpiar campo"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
         </div>
-        {error && <span className="text-xs text-red-600">{error}</span>}
+        {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
       </div>
     );
   }

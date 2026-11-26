@@ -1,53 +1,111 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { RentalRequest, Property } from "@/lib/types";
-import { REQUEST_STATUSES } from "@/lib/constants";
-import { LABOR_PROFILES, LABOR_DOCS } from "@/lib/constants";
-import { REQUIRED_DOCS_VIVIENDA, REQUIRED_DOCS_RECREATIVO, COSIGNER_DOCS } from "@/lib/constants";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { ArrowLeft, ExternalLink, FileText, UploadCloud } from "lucide-react";
+import {
+  COSIGNER_DOCS,
+  LABOR_DOCS,
+  LABOR_PROFILES,
+  REQUIRED_DOCS_RECREATIVO,
+  REQUIRED_DOCS_VIVIENDA,
+} from "@/lib/constants";
+import { resolvePrivateFileUrl } from "@/lib/storage/private-files";
+import type { Property } from "@/modules/properties/types";
+import { findContractIdForRequest, getRequestBundle } from "@/modules/rental-requests/repository";
+import { requestDocsFormSchema, type RequestDocsFormValues } from "@/modules/rental-requests/schemas";
+import { executeRequestTransition, submitRequestDocuments } from "@/modules/rental-requests/service";
+import type { RentalRequest, RequestDocument } from "@/modules/rental-requests/types";
+import { getDocumentStatusBadge, getRequestStatusBadge } from "@/modules/shared/status-badges";
+import Alert from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
-import { useToast } from "@/components/ui/Toast";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
+import ConfirmModal from "@/components/ui/ConfirmModal";
+import EmptyState from "@/components/ui/EmptyState";
 import Input from "@/components/ui/Input";
+import PageHeader from "@/components/ui/PageHeader";
 import Select from "@/components/ui/Select";
+import { useToast } from "@/components/ui/Toast";
+
+const STEP_LABELS: { key: string; label: string }[] = [
+  { key: "pending", label: "Solicitud enviada" },
+  { key: "first_accepted", label: "Pre-aceptada" },
+  { key: "docs_submitted", label: "Documentos en revisión" },
+  { key: "accepted", label: "Aprobada" },
+];
 
 export default function TenantRequestDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
-  const supabase = createClient();
   const toast = useToast();
 
   const [req, setReq] = useState<RentalRequest | null>(null);
   const [property, setProperty] = useState<Property | null>(null);
-  const [docs, setDocs] = useState<{ id: string; doc_type: string; file_url: string }[]>([]);
-
-  const [laborProfile, setLaborProfile] = useState("empleado");
-  const [hasCosigner, setHasCosigner] = useState(false);
-  const [cosignerProperty, setCosignerProperty] = useState(false);
-  const [durationValue, setDurationValue] = useState("");
-  const [durationUnit, setDurationUnit] = useState("meses");
-
+  const [docs, setDocs] = useState<RequestDocument[]>([]);
   const [files, setFiles] = useState<Record<string, File>>({});
-  const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [msgError, setMsgError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [canceling, setCanceling] = useState(false);
 
-  const load = async () => {
-    const { data: r } = await supabase.from("rental_requests").select("*").eq("id", id).single();
-    setReq(r as RentalRequest);
-    if (r) {
-      const { data: p } = await supabase.from("properties").select("*").eq("id", r.property_id).single();
-      setProperty(p as Property);
-      const { data: d } = await supabase.from("request_documents").select("*").eq("request_id", id);
-      setDocs(d || []);
-      if (r.labor_profile) setLaborProfile(r.labor_profile);
-      setHasCosigner(r.has_cosigner);
-      setCosignerProperty(r.cosigner_requires_property);
-      if (r.desired_duration_value) setDurationValue(String(r.desired_duration_value));
-      if (r.desired_duration_unit) setDurationUnit(r.desired_duration_unit);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    control,
+    formState: { errors, isSubmitting },
+  } = useForm<RequestDocsFormValues>({
+    resolver: zodResolver(requestDocsFormSchema),
+    mode: "onTouched",
+    defaultValues: {
+      laborProfile: "empleado",
+      hasCosigner: false,
+      cosignerRequiresProperty: false,
+      durationValue: "",
+      durationUnit: "meses",
+    },
+  });
+
+  const laborProfile = useWatch({ control, name: "laborProfile" });
+  const hasCosigner = useWatch({ control, name: "hasCosigner" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const bundle = await getRequestBundle(id);
+      setReq(bundle.request);
+      setProperty(bundle.property);
+      setDocs(bundle.documents);
+
+      if (bundle.request) {
+        reset({
+          laborProfile: bundle.request.labor_profile || "empleado",
+          hasCosigner: Boolean(bundle.request.has_cosigner),
+          cosignerRequiresProperty: Boolean(bundle.request.cosigner_requires_property),
+          durationValue: bundle.request.desired_duration_value
+            ? String(bundle.request.desired_duration_value)
+            : "",
+          durationUnit:
+            bundle.request.desired_duration_unit ||
+            (bundle.property?.rental_type === "recreativo" ? "dias" : "meses"),
+        });
+      }
+    } finally {
+      setLoading(false);
     }
-  };
-  useEffect(() => { load(); }, [id]);
+  }, [id, reset]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [load]);
 
   const docSlots = (): string[] => {
     if (!property) return [];
@@ -59,190 +117,273 @@ export default function TenantRequestDetailPage() {
     return slots;
   };
 
-  const uploadDocs = async () => {
+  const openDocument = async (storedPath: string) => {
+    const url = await resolvePrivateFileUrl("request-documents", storedPath);
+    if (!url) {
+      toast.show("No se pudo abrir el documento", "error");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const onSubmitDocs = async (values: RequestDocsFormValues) => {
     if (!req || !property) return;
-    setUploading(true);
     setMsg("");
+    setMsgError(false);
+    const res = await submitRequestDocuments(req.id, property, values, files);
+    if (!res.ok) {
+      setMsg(res.error);
+      setMsgError(true);
+      return;
+    }
+    setFiles({});
+    setMsg("Documentos enviados. Espera la revisión del propietario.");
+    toast.show("Documentos enviados correctamente", "success");
+    await load();
+  };
+
+  const confirmCancelRequest = async () => {
+    if (!req || !property) return;
+    setCanceling(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No autenticado");
-
-      // validate duration
-      const dv = Number(durationValue);
-      if (!dv || dv <= 0) throw new Error("Indica la duración deseada.");
-      if (property.rental_type === "vivienda") {
-        // months up to 12
-        if (durationUnit === "meses" && dv > 12) throw new Error("Máximo 12 meses.");
+      const res = await executeRequestTransition(req.id, { action: "cancel" });
+      if (!res.ok) {
+        toast.show(res.error, "error");
+        return;
       }
-      if (property.max_rental_days && durationUnit === "dias" && dv > property.max_rental_days) {
-        throw new Error(`No más de ${property.max_rental_days} días.`);
-      }
-
-      // upload each provided file
-      for (const [docType, file] of Object.entries(files)) {
-        const path = `${user.id}/${req.id}/${Date.now()}-${file.name}`;
-        const { error: upErr } = await supabase.storage.from("request-documents").upload(path, file);
-        if (upErr) throw upErr;
-        const { data: signed } = await supabase.storage.from("request-documents").createSignedUrl(path, 60 * 60 * 24 * 365);
-        const url = signed?.signedUrl || path;
-        await supabase.from("request_documents").insert({ request_id: req.id, doc_type: docType, file_url: url });
-      }
-
-      await supabase.from("rental_requests").update({
-        status: "docs_submitted",
-        labor_profile: laborProfile as any,
-        has_cosigner: hasCosigner,
-        cosigner_requires_property: cosignerProperty,
-        desired_duration_value: dv,
-        desired_duration_unit: durationUnit as any,
-      }).eq("id", req.id);
-
-      // notify owner
-      await supabase.from("notifications").insert({
-        user_id: property.owner_id,
-        type: "docs_submitted",
-        title: "Documentos recibidos",
-        message: `El inquilino envió documentos para "${property.name}".`,
-        link: `/owner/requests/${req.id}`,
-      });
-
-      setMsg("Documentos enviados. Espera la revisión del propietario.");
-      toast.show("Documentos enviados correctamente", "success");
+      setCancelOpen(false);
+      toast.show("Solicitud cancelada", "info");
       await load();
-    } catch (e: any) {
-      setMsg(e.message || "Error");
     } finally {
-      setUploading(false);
+      setCanceling(false);
     }
   };
 
-  if (!req || !property) return <p className="text-muted">Cargando...</p>;
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4">
+        <div className="h-12 w-64 animate-pulse rounded-lg bg-surface-secondary" />
+        <div className="h-40 animate-pulse rounded-xl border border-border bg-surface-secondary" />
+        <div className="h-56 animate-pulse rounded-xl border border-border bg-surface-secondary" />
+      </div>
+    );
+  }
+
+  if (!req || !property) {
+    return (
+      <EmptyState
+        title="Solicitud no encontrada"
+        message="No pudimos encontrar esta solicitud o no tienes permiso para consultarla."
+        action={
+          <Link
+            href="/tenant/requests"
+            className="inline-flex min-h-[40px] items-center rounded-lg bg-primary-btn px-4 py-2 text-sm font-medium text-white hover:bg-primary-btn-hover"
+          >
+            Volver a mis solicitudes
+          </Link>
+        }
+      />
+    );
+  }
 
   const canUpload = req.status === "first_accepted" || req.status === "returned";
+  const statusBadge = getRequestStatusBadge(req.status);
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-2 text-2xl font-bold text-primary">Detalle de solicitud</h1>
-      <p className="text-sm text-muted mb-4">Estado: {REQUEST_STATUSES[req.status]}</p>
-      {/* progress line */}
-      <div className="mb-4 flex flex-wrap gap-1 text-xs">
-        {["pending", "first_accepted", "docs_submitted", "accepted"].map((s, i) => (
-          <span key={s} className={`rounded px-2 py-0.5 ${req.status === s || (req.status === "returned" && s === "docs_submitted") ? "bg-primary text-white" : "bg-gray-100"}`}>
-            {i + 1}. {s}
-          </span>
-        ))}
+    <div className="mx-auto max-w-2xl space-y-6">
+      <PageHeader
+        title="Detalle de solicitud"
+        subtitle={`${property.name} — ${property.location}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge color={statusBadge.color}>{statusBadge.label}</Badge>
+            <Link
+              href="/tenant/requests"
+              className="inline-flex min-h-[38px] items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-primary-light/60"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              <span>Volver</span>
+            </Link>
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {STEP_LABELS.map((step, i) => {
+          const active =
+            req.status === step.key || (req.status === "returned" && step.key === "docs_submitted");
+          return (
+            <div
+              key={step.key}
+              className={`rounded-lg border px-3 py-2 text-xs font-medium ${
+                active
+                  ? "border-primary-btn bg-primary-btn text-white"
+                  : "border-border bg-card text-muted"
+              }`}
+            >
+              {i + 1}. {step.label}
+            </div>
+          );
+        })}
       </div>
-      <p className="mb-4 font-medium">{property.name} — {property.location}</p>
 
       {req.status === "rejected" && req.rejection_reason && (
-        <p className="mb-4 text-sm text-red-600">Rechazada: {req.rejection_reason}</p>
+        <Alert variant="error" title="Solicitud rechazada">
+          {req.rejection_reason}
+        </Alert>
       )}
       {req.status === "returned" && req.return_message && (
-        <p className="mb-4 text-sm text-yellow-700">Devuelta: {req.return_message}</p>
+        <Alert variant="warning" title="Documentos devueltos para corrección">
+          {req.return_message}
+        </Alert>
       )}
       {req.status === "property_rented" && (
-        <p className="mb-4 text-sm text-red-600">Esta propiedad ya ha sido alquilada.</p>
+        <Alert variant="warning" title="Propiedad no disponible">
+          Esta propiedad ya ha sido alquilada.
+        </Alert>
       )}
 
-      <div className="mb-4 rounded-xl border border-border bg-card p-4">
-        <h2 className="font-semibold mb-2">Documentos enviados</h2>
-        {docs.length === 0 && <p className="text-sm text-muted">Aún no hay documentos.</p>}
-        <ul className="flex flex-col gap-1">
-          {docs.map((d) => (
-            <li key={d.id} className="text-sm">
-              <a href={d.file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{d.doc_type}</a>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <Card>
+        <CardHeader className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" aria-hidden="true" />
+          <h2 className="font-semibold text-primary-dark">Documentos enviados</h2>
+        </CardHeader>
+        <CardBody>
+          {docs.length === 0 ? (
+            <p className="text-sm text-muted">Aún no hay documentos adjuntos.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {docs.map((d) => {
+                const docBadge = getDocumentStatusBadge(d.status);
+                return (
+                  <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => void openDocument(d.file_url)}
+                      className="inline-flex items-center gap-1.5 font-medium text-primary hover:underline"
+                    >
+                      <span>{d.doc_type}</span>
+                      <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <Badge color={docBadge.color}>{docBadge.label}</Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardBody>
+      </Card>
 
       {canUpload && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h2 className="font-semibold mb-3">Subir documentos</h2>
-          <div className="flex flex-col gap-4">
-            <Select
-              label="Perfil laboral"
-              value={laborProfile}
-              onChange={(e) => setLaborProfile(e.target.value)}
-              options={LABOR_PROFILES.map((l) => ({ value: l.value, label: l.label }))}
-            />
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={hasCosigner} onChange={(e) => setHasCosigner(e.target.checked)} />
-              Tiene codeudor/fiador
-            </label>
-            {hasCosigner && (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={cosignerProperty} onChange={(e) => setCosignerProperty(e.target.checked)} />
-                Codeudor con finca raíz
-              </label>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label={property.rental_type === "vivienda" ? "Duración (meses, máx 12)" : "Duración (días/horas)"}
-                type="number"
-                value={durationValue}
-                onChange={(e) => setDurationValue(e.target.value)}
-              />
+        <Card>
+          <CardHeader className="flex items-center gap-2">
+            <UploadCloud className="h-4 w-4 text-primary" aria-hidden="true" />
+            <h2 className="font-semibold text-primary-dark">Subir documentos</h2>
+          </CardHeader>
+          <CardBody>
+            <form onSubmit={handleSubmit(onSubmitDocs)} className="flex flex-col gap-4" noValidate>
               <Select
-                label="Unidad"
-                value={durationUnit}
-                onChange={(e) => setDurationUnit(e.target.value)}
-                options={
-                  property.rental_type === "vivienda"
-                    ? [{ value: "meses", label: "Meses" }, { value: "dias", label: "Días" }]
-                    : [{ value: "dias", label: "Días" }, { value: "horas", label: "Horas" }]
-                }
+                label="Perfil laboral"
+                options={LABOR_PROFILES.map((l) => ({ value: l.value, label: l.label }))}
+                {...register("laborProfile")}
               />
-            </div>
+              <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" {...register("hasCosigner")} />
+                <span>Tiene codeudor/fiador</span>
+              </label>
+              {hasCosigner && (
+                <label className="flex min-h-[36px] cursor-pointer items-center gap-2 text-sm">
+                  <input type="checkbox" {...register("cosignerRequiresProperty")} />
+                  <span>Codeudor con finca raíz</span>
+                </label>
+              )}
 
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium">Archivos (uno por documento)</p>
-              {docSlots().map((slot) => (
-                <div key={slot}>
-                  <label className="text-xs text-muted">{slot}</label>
-                  <input
-                    type="file"
-                    className="block w-full text-sm"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) setFiles((prev) => ({ ...prev, [slot]: f }));
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label={property.rental_type === "vivienda" ? "Duración (meses, máx 12)" : "Duración (días/horas)"}
+                  type="number"
+                  error={errors.durationValue?.message}
+                  {...register("durationValue")}
+                />
+                <Select
+                  label="Unidad"
+                  options={
+                    property.rental_type === "vivienda"
+                      ? [{ value: "meses", label: "Meses" }, { value: "dias", label: "Días" }]
+                      : [{ value: "dias", label: "Días" }, { value: "horas", label: "Horas" }]
+                  }
+                  {...register("durationUnit")}
+                />
+              </div>
 
-            {msg && <p className="text-sm text-muted">{msg}</p>}
-            <Button onClick={uploadDocs} loading={uploading}>Enviar documentos</Button>
-          </div>
-        </div>
-      )}
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-medium text-primary-dark">
+                  Archivos (PDF, JPG, PNG o WEBP, máx 10MB)
+                </p>
+                {docSlots().map((slot) => (
+                  <div key={slot} className="rounded-lg border border-border bg-surface-secondary p-3">
+                    <label className="mb-1.5 block text-xs font-medium text-muted">{slot}</label>
+                    <input
+                      type="file"
+                      accept=".pdf,image/jpeg,image/png,image/webp"
+                      className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary-light file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-dark hover:file:bg-primary-light/80"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) setFiles((prev) => ({ ...prev, [slot]: f }));
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
 
-      {req.status !== "accepted" && req.status !== "rejected" && req.status !== "property_rented" && (
-        <div className="mb-4">
-          <Button variant="danger" size="sm" onClick={async () => {
-            if (!confirm("¿Cancelar esta solicitud?")) return;
-            const reason = prompt("Motivo (opcional):") || "";
-            await supabase.from("rental_requests").update({ status: "rejected", rejection_reason: reason || "Cancelada por el inquilino" }).eq("id", req.id);
-            await supabase.from("notifications").insert({
-              user_id: property.owner_id, type: "request_cancelled", title: "Solicitud cancelada",
-              message: `El inquilino canceló la solicitud para "${property.name}".`, link: `/owner/requests/${req.id}`,
-            });
-            await load();
-          }}>Cancelar solicitud</Button>
-        </div>
+              {msg && (
+                <Alert variant={msgError ? "error" : "success"}>
+                  {msg}
+                </Alert>
+              )}
+              <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
+                Enviar documentos
+              </Button>
+            </form>
+          </CardBody>
+        </Card>
       )}
 
       {req.status === "accepted" && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="mb-3 text-sm">Tu solicitud fue aceptada. Procede a firmar el contrato.</p>
-          <Button onClick={async () => {
-            const { data } = await supabase.from("contracts").select("id").eq("request_id", req.id).single();
-            if (data) router.push(`/contracts/${data.id}`);
-          }}>Ir al contrato</Button>
+        <Alert variant="success" title="Solicitud aprobada">
+          <div className="space-y-3">
+            <p>Tu solicitud fue aceptada. Procede a revisar y firmar el contrato.</p>
+            <Button
+              onClick={async () => {
+                const contractId = await findContractIdForRequest(req.id);
+                if (contractId) router.push(`/contracts/${contractId}`);
+              }}
+            >
+              Ir al contrato
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {req.status !== "accepted" && req.status !== "rejected" && req.status !== "property_rented" && (
+        <div className="flex justify-end">
+          <Button variant="danger" size="sm" onClick={() => setCancelOpen(true)}>
+            Cancelar solicitud
+          </Button>
         </div>
       )}
+
+      <ConfirmModal
+        open={cancelOpen}
+        onClose={() => setCancelOpen(false)}
+        onConfirm={() => void confirmCancelRequest()}
+        title="Cancelar solicitud"
+        message="¿Estás seguro de cancelar esta solicitud de arriendo? Esta acción no se puede deshacer."
+        confirmLabel="Sí, cancelar solicitud"
+        cancelLabel="Volver"
+        variant="danger"
+        loading={canceling}
+      />
     </div>
   );
 }

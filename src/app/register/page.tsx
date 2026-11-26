@@ -1,170 +1,155 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { getDataSourceMode } from "@/lib/config/env";
+import {
+  evaluatePasswordStrength,
+  registerSchema,
+  type RegisterFormValues,
+} from "@/modules/auth/schemas";
+import { registerAccount } from "@/modules/auth/service";
+import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
-import { useToast } from "@/components/ui/Toast";
+import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
-import { registerSchema } from "@/lib/validators/schemas";
-
-const OWNER_PASSWORD = "Propietario1234";
-
-function onlyLetters(v: string) {
-  return /^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]*$/.test(v);
-}
-function onlyDigits(v: string) {
-  return /^\d*$/.test(v);
-}
+import { useToast } from "@/components/ui/Toast";
 
 export default function RegisterPage() {
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [terms, setTerms] = useState(false);
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState("");
   const router = useRouter();
-  const supabase = createClient();
   const toast = useToast();
+  const mode = getDataSourceMode();
 
-  const nameError = useMemo(() => {
-    if (!fullName) return "Requerido";
-    if (!onlyLetters(fullName)) return "Solo letras";
-    return "";
-  }, [fullName]);
-  const phoneError = useMemo(() => {
-    if (!phone) return "Requerido";
-    if (!onlyDigits(phone)) return "Solo números";
-    if (phone.length > 10) return "Máximo 10 dígitos";
-    if (phone.length < 10) return "Mínimo 10 dígitos";
-    return "";
-  }, [phone]);
-  const emailError = useMemo(() => {
-    if (!email) return "Requerido";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Formato inválido (ej: example@gmail.com)";
-    return "";
-  }, [email]);
-  const passwordError = useMemo(() => {
-    if (!password) return "Requerido";
-    if (password.length < 6) return "Mínimo 6 caracteres";
-    return "";
-  }, [password]);
+  const {
+    register,
+    handleSubmit,
+    control,
+    setValue,
+    formState: { errors, touchedFields, isSubmitting },
+  } = useForm<RegisterFormValues>({
+    resolver: zodResolver(registerSchema),
+    mode: "onTouched",
+    defaultValues: { fullName: "", phone: "", email: "", password: "", terms: false },
+  });
 
-  const strength = useMemo(() => {
-    if (!password) return { level: 0, label: "", color: "" };
-    let score = 0;
-    if (password.length >= 8) score++;
-    if (/[A-Z]/.test(password)) score++;
-    if (/\d/.test(password)) score++;
-    if (/[^A-Za-z0-9]/.test(password)) score++;
-    if (score <= 1) return { level: 1, label: "Bajo", color: "text-red-600" };
-    if (score === 2) return { level: 2, label: "Medio", color: "text-yellow-600" };
-    return { level: 3, label: "Alto", color: "text-green-600" };
-  }, [password]);
-  const termsError = terms ? "" : "Debes aceptar los términos";
+  const passwordVal = useWatch({ control, name: "password" }) || "";
+  const strength = evaluatePasswordStrength(passwordVal);
 
-  const mark = (f: string) => setTouched((t) => ({ ...t, [f]: true }));
+  const fullNameField = register("fullName");
+  const phoneField = register("phone");
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setTouched({ fullName: true, phone: true, email: true, password: true, terms: true });
-    // Zod validation (server-side ready)
-    const parsed = registerSchema.safeParse({ fullName, phone, email, password, terms });
-    if (!parsed.success) {
-      setError("Corrige los errores antes de continuar.");
-      return;
-    }
-    if (nameError || phoneError || emailError || passwordError || termsError) {
-      setError("Corrige los errores antes de continuar.");
-      return;
-    }
-    setLoading(true);
+  const onSubmit = async (values: RegisterFormValues) => {
     setError("");
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName, phone, accepted_terms: true },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (error) { setError("Acceso fallido"); setLoading(false); return; }
+    setInfo("");
+    const res = await registerAccount(values);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    if (res.data.requiresEmailConfirmation) {
+      setInfo("Cuenta creada. Revisa tu correo electrónico para confirmar tu dirección antes de iniciar sesión.");
+      toast.show("Revisa tu correo para validar la cuenta", "info");
+      return;
+    }
     toast.show("Cuenta creada correctamente", "success");
     router.push("/login");
     router.refresh();
   };
 
-
   return (
-    <div className="mx-auto max-w-md">
-      <h1 className="mb-6 text-2xl font-bold text-primary">Crear cuenta</h1>
-      <form onSubmit={handleRegister} className="flex flex-col gap-4">
-        <Input
-          label="Nombre completo"
-          value={fullName}
-          onChange={(e) => { if (onlyLetters(e.target.value)) setFullName(e.target.value); }}
-          onBlur={() => mark("fullName")}
-          error={touched.fullName ? nameError : ""}
-          success={touched.fullName && !nameError}
-          placeholder="Solo letras"
-          required
-        />
-        <Input
-          label="Teléfono celular"
-          value={phone}
-          onChange={(e) => { const v = e.target.value; if (onlyDigits(v) && v.length <= 10) setPhone(v); }}
-          onBlur={() => mark("phone")}
-          error={touched.phone ? phoneError : ""}
-          success={touched.phone && !phoneError}
-          placeholder="10 dígitos"
-          maxLength={10}
-          required
-        />
-        <Input
-          label="Correo electrónico"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onBlur={() => mark("email")}
-          error={touched.email ? emailError : ""}
-          success={touched.email && !emailError}
-          placeholder="example@gmail.com"
-          pattern="[^\s@]+@[^\s@]+\.[^\s@]+"
-          required
-        />
-        <Input
-          label="Contraseña"
-          type="password"
-          showPasswordToggle
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onBlur={() => mark("password")}
-          error={touched.password ? passwordError : ""}
-          success={touched.password && !passwordError}
-          placeholder="Mínimo 6 caracteres"
-          required
-        />
-        {password && (
-          <p className={`text-xs font-medium ${strength.color}`}>
-            Nivel de seguridad: {strength.label}
-          </p>
-        )}
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" checked={terms} onChange={(e) => { setTerms(e.target.checked); mark("terms"); }} className="mt-1" />
-          <span>Acepto los <Link href="/terms" className="text-primary hover:underline">términos y condiciones</Link>.</span>
-        </label>
-        {touched.terms && termsError && <p className="text-xs text-red-600">{termsError}</p>}
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <Button type="submit" loading={loading}>Registrarse</Button>
-      </form>
+    <div className="mx-auto max-w-md py-2 sm:py-6">
+      <Card>
+        <CardHeader>
+          <h1 className="text-2xl font-bold text-primary-dark">Crear cuenta</h1>
+          <p className="mt-1 text-sm text-muted">Regístrate como inquilino para empezar</p>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          {mode === "unconfigured" && (
+            <Alert variant="error">
+              Supabase no está configurado. Define las variables de entorno en `.env.local` para registrar cuentas.
+            </Alert>
+          )}
 
-      <p className="mt-4 text-center text-sm">
-        ¿Ya tienes cuenta? <Link href="/login" className="text-primary hover:underline">Entrar</Link>
-      </p>
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
+            <Input
+              label="Nombre completo"
+              placeholder="Solo letras"
+              error={errors.fullName?.message}
+              success={Boolean(touchedFields.fullName && !errors.fullName)}
+              required
+              {...fullNameField}
+              onChange={(e) => {
+                const clean = e.target.value.replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ\s]/g, "");
+                setValue("fullName", clean, { shouldValidate: Boolean(touchedFields.fullName) });
+              }}
+            />
+            <Input
+              label="Teléfono celular"
+              placeholder="10 dígitos"
+              maxLength={10}
+              error={errors.phone?.message}
+              success={Boolean(touchedFields.phone && !errors.phone)}
+              required
+              {...phoneField}
+              onChange={(e) => {
+                const clean = e.target.value.replace(/\D/g, "").slice(0, 10);
+                setValue("phone", clean, { shouldValidate: Boolean(touchedFields.phone) });
+              }}
+            />
+            <Input
+              label="Correo electrónico"
+              type="email"
+              placeholder="usuario@correo.com"
+              error={errors.email?.message}
+              success={Boolean(touchedFields.email && !errors.email)}
+              required
+              {...register("email")}
+            />
+            <Input
+              label="Contraseña"
+              type="password"
+              showPasswordToggle
+              placeholder="Mínimo 8 caracteres, mayúscula, minúscula y número"
+              error={errors.password?.message}
+              success={Boolean(touchedFields.password && !errors.password)}
+              required
+              {...register("password")}
+            />
+            {passwordVal && (
+              <p className={`text-xs font-medium ${strength.color}`}>
+                Nivel de seguridad: {strength.label}
+              </p>
+            )}
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+              <input type="checkbox" className="mt-1" {...register("terms")} />
+              <span>
+                Acepto los{" "}
+                <Link href="/terms" className="font-medium text-primary hover:underline">
+                  términos y condiciones
+                </Link>
+                .
+              </span>
+            </label>
+            {errors.terms?.message && <p className="text-xs text-red-600">{errors.terms.message}</p>}
+            {error && <Alert variant="error">{error}</Alert>}
+            {info && <Alert variant="success">{info}</Alert>}
+            <Button type="submit" loading={isSubmitting} className="w-full">
+              Registrarse
+            </Button>
+          </form>
+
+          <p className="border-t border-border pt-4 text-center text-sm text-muted">
+            ¿Ya tienes cuenta?{" "}
+            <Link href="/login" className="font-medium text-primary hover:underline">
+              Entrar
+            </Link>
+          </p>
+        </CardBody>
+      </Card>
     </div>
   );
 }

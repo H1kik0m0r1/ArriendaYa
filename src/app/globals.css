@@ -1,42 +1,135 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-:root {
-  --background: #F5F4EF;
-  --foreground: #293B32;
+:root,
+[data-theme="light"] {
+  --background: #F5F7FA;
+  --foreground: #172033;
+  --card: #FFFFFF;
+  --surface-secondary: #EEF2F6;
+  --muted: #64748B;
+  --border: #E2E8F0;
+  --input-bg: #FFFFFF;
+  --menu-bg: #FFFFFF;
   --primary: #367C59;
-  --primary-dark: #293B32;
-  --primary-light: #DDEADF;
-  --card: #ffffff;
-  --muted: #6b7280;
-  --border: #d1d5db;
+  --primary-btn: #367C59;
+  --primary-btn-hover: #2A6246;
+  --primary-dark: #1E4D36;
+  --primary-light: #E2F1E8;
   --success: #367C59;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --info: #3b82f6;
+  --warning: #D97706;
+  --danger: #DC2626;
+  --info: #2563EB;
+}
+
+[data-theme="dark"] {
+  --background: #111827;
+  --foreground: #F9FAFB;
+  --card: #1F2937;
+  --surface-secondary: #273449;
+  --muted: #CBD5E1;
+  --border: #374151;
+  --input-bg: #1F2937;
+  --menu-bg: #1F2937;
+  --primary: #4CA375;
+  --primary-btn: #2E7D57;
+  --primary-btn-hover: #246747;
+  --primary-dark: #86EFAC;
+  --primary-light: #1E3A2F;
+  --success: #4CA375;
+  --warning: #F59E0B;
+  --danger: #F87171;
+  --info: #60A5FA;
+}
+
+[data-contrast="high"],
+[data-theme="light"][data-contrast="high"] {
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --card: #FFFFFF;
+  --surface-secondary: #E2E8F0;
+  --muted: #1E293B;
+  --border: #0F172A;
+  --input-bg: #FFFFFF;
+  --menu-bg: #FFFFFF;
+  --primary: #0B5D34;
+  --primary-btn: #0B5D34;
+  --primary-btn-hover: #074224;
+  --primary-dark: #000000;
+  --primary-light: #D7F2E1;
+}
+
+[data-theme="dark"][data-contrast="high"] {
+  --background: #000000;
+  --foreground: #FFFFFF;
+  --card: #111827;
+  --surface-secondary: #1E293B;
+  --muted: #F1F5F9;
+  --border: #E2E8F0;
+  --input-bg: #111827;
+  --menu-bg: #111827;
+  --primary: #6EE7B7;
+  --primary-btn: #15803D;
+  --primary-btn-hover: #166534;
+  --primary-dark: #A7F3D0;
+  --primary-light: #0F3D26;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
+  --color-primary-btn: var(--primary-btn);
+  --color-primary-btn-hover: var(--primary-btn-hover);
   --color-primary-dark: var(--primary-dark);
   --color-primary-light: var(--primary-light);
   --color-card: var(--card);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-input-bg: var(--input-bg);
+  --color-menu-bg: var(--menu-bg);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --font-sans: var(--font-inter);
 }
 
+html,
 body {
-  background: var(--background);
+  overflow-x: hidden;
+}
+
+body {
+  background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-inter), system-ui, sans-serif;
   line-height: 1.6;
 }
 
-h1 { font-size: 1.75rem; font-weight: 700; }
-h2 { font-size: 1.25rem; font-weight: 600; }
-h3 { font-size: 1.1rem; font-weight: 600; }
+input,
+select,
+textarea {
+  color: var(--foreground);
+}
+
+select option {
+  background-color: var(--menu-bg);
+  color: var(--foreground);
+}
+
+h1 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -51,9 +144,129 @@ h3 { font-size: 1.1rem; font-weight: 600; }
 }
 
 /* react-big-calendar overrides */
-.rbc-calendar { font-family: var(--font-inter), system-ui, sans-serif; }
-.rbc-header { border-bottom: 1px solid var(--border); padding: 8px; font-weight: 600; }
-.rbc-today { background-color: var(--primary-light); }
-.rbc-event { background-color: var(--primary); border-radius: 6px; border: none; }
-.rbc-toolbar button { border-radius: 6px; }
-.rbc-month-view, .rbc-time-view { border: 1px solid var(--border); border-radius: 8px; }
+.rbc-calendar {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  background-color: var(--card);
+  color: var(--foreground);
+}
+.rbc-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.rbc-toolbar .rbc-toolbar-label {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.rbc-header {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 4px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--foreground);
+}
+.rbc-today {
+  background-color: var(--primary-light);
+}
+.rbc-off-range {
+  color: var(--muted);
+}
+.rbc-off-range-bg {
+  background-color: var(--surface-secondary);
+}
+.rbc-date-cell,
+.rbc-button-link {
+  color: var(--foreground);
+}
+.rbc-event {
+  background-color: var(--primary-btn);
+  color: #ffffff;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.78rem;
+}
+.rbc-show-more {
+  background-color: var(--surface-secondary);
+  color: var(--primary);
+}
+.rbc-toolbar button {
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background-color: var(--card);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.rbc-toolbar button:hover,
+.rbc-toolbar button:focus {
+  background-color: var(--surface-secondary);
+  color: var(--foreground);
+}
+.rbc-toolbar button.rbc-active {
+  background-color: var(--primary-btn);
+  color: #ffffff;
+  border-color: var(--primary-btn);
+}
+.rbc-month-view,
+.rbc-time-view,
+.rbc-agenda-view {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--card);
+}
+.rbc-month-row + .rbc-month-row,
+.rbc-day-bg + .rbc-day-bg,
+.rbc-header + .rbc-header,
+.rbc-time-content,
+.rbc-time-header-content,
+.rbc-timeslot-group,
+.rbc-time-slot,
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td,
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  border-color: var(--border) !important;
+}
+
+/* Leaflet controles, popups y mapa en temas claro/oscuro */
+.leaflet-container {
+  background-color: var(--surface-secondary);
+  color: var(--foreground);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+  border: 1px solid var(--border);
+}
+.leaflet-bar a,
+.leaflet-bar a:hover,
+.leaflet-control-attribution {
+  background-color: var(--card) !important;
+  color: var(--foreground) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--primary) !important;
+}
+[data-theme="dark"] .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.88) contrast(1.15) saturate(0.85);
+}
+
+/* Impresión limpia de contratos y comprobantes */
+@media print {
+  header,
+  aside,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
